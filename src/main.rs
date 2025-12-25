@@ -25,14 +25,14 @@ impl<'a> MarkovGenerator<'a> {
         if let Some(e2e) = &mut self.e2e {
             if let Some(splited) = &self.splited {
                 for i in 0..splited.len() - 1 {
-                    let v = e2e.entry(splited[i]).or_insert(vec!["<end>"]);
+                    let v = e2e.entry(splited[i]).or_insert(Vec::new());
                     v.push(splited[i + 1]);
                 }
-
-                // last element may not be pushed
-                if let Some(last_element) = splited.last() {
-                    e2e.entry(*last_element).or_insert(vec!["<end>"]);
-                }
+                //
+                // // last element may not be pushed
+                // if let Some(last_element) = splited.last() {
+                //     e2e.entry(*last_element).or_insert(vec!["<end>"]);
+                // }
             }
         }
     }
@@ -50,7 +50,7 @@ impl<'a> MarkovGenerator<'a> {
                     let hoge = e2e[generated.last().expect("wtf")]
                         [random_range(0..e2e[generated.last().expect("wtf")].len())];
 
-                    if hoge == "<end>" {
+                    if hoge == "\n" {
                         break;
                     }
 
@@ -75,7 +75,14 @@ impl<'a> MarkovGenerator<'a> {
 fn main() {
     println!("Setup markov generator,,,.");
     let mut generator = MarkovGenerator {
-        raw_text: Some("POCKYCHOCOLATE"),
+        raw_text: Some(
+            "重役募集ラストスパート
+寒風の吹きすさぶ折、皆様いかがお過ごしでしょうか。
+さて、次期重役の椅子も現在あと少しとなっております。とはいえ、あと少しといっても全て埋める必要があります。
+皆様のご連絡、切にお待ちしております。
+ピン留めにある、既に申し込まれた御学友と共に放課後に議論する。中々ステキな時間だと感じます。
+",
+        ),
         splited: None,
         e2e: None,
     };
