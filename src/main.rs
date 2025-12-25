@@ -1,4 +1,7 @@
+use rand::random_range;
 use std::collections::HashMap;
+use std::thread::sleep;
+use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 
 struct MarkovGenerator<'a> {
@@ -39,7 +42,34 @@ impl<'a> MarkovGenerator<'a> {
         self.setup_e2e();
     }
 
-    fn generate(&self) -> &'a str {}
+    fn generate(&self) -> String {
+        if let Some(e2e) = &self.e2e {
+            if let Some(element) = e2e.keys().nth(random_range(0..e2e.keys().len())) {
+                let mut generated = vec![*element];
+                loop {
+                    let hoge = e2e[generated.last().expect("wtf")]
+                        [random_range(0..e2e[generated.last().expect("wtf")].len())];
+
+                    if hoge == "<end>" {
+                        break;
+                    }
+
+                    generated.push(hoge);
+                }
+
+                let mut generated_str = String::new();
+                generated
+                    .iter()
+                    .for_each(|element| generated_str.push_str(element));
+
+                generated_str
+            } else {
+                panic!("wtf");
+            }
+        } else {
+            panic!("e2e has not setup yet!");
+        }
+    }
 }
 
 fn main() {
@@ -49,9 +79,15 @@ fn main() {
         splited: None,
         e2e: None,
     };
-    &mut generator.setup();
+    generator.setup();
     println!("Finished setup!");
     println!("raw_text: {:?}", generator.raw_text);
     println!("splited: {:?}", generator.splited);
     println!("e2e: {:?}", generator.e2e);
+    println!("Start generating.");
+    let duration = Duration::from_millis(500);
+    loop {
+        println!("{}", generator.generate());
+        sleep(duration);
+    }
 }
