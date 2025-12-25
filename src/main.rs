@@ -43,32 +43,53 @@ impl<'a> MarkovGenerator<'a> {
     }
 
     fn generate(&self) -> String {
-        if let Some(e2e) = &self.e2e {
-            if let Some(element) = e2e.keys().nth(random_range(0..e2e.keys().len())) {
-                let mut generated = vec![*element];
-                loop {
-                    let hoge = e2e[generated.last().expect("wtf")]
-                        [random_range(0..e2e[generated.last().expect("wtf")].len())];
+        let e2e = self.e2e.as_ref().expect("e2e has not setup yet!");
+        let mut generated = vec![e2e["\n"][random_range(0..e2e["\n"].len())]];
 
-                    if hoge == "\n" {
-                        break;
-                    }
+        loop {
+            let predicted = e2e[generated.last().expect("wtf")]
+                [random_range(0..e2e[generated.last().expect("wtf")].len())];
 
-                    generated.push(hoge);
-                }
-
-                let mut generated_str = String::new();
-                generated
-                    .iter()
-                    .for_each(|element| generated_str.push_str(element));
-
-                generated_str
-            } else {
-                panic!("wtf");
+            if predicted == "\n" {
+                break;
             }
-        } else {
-            panic!("e2e has not setup yet!");
+
+            generated.push(predicted);
         }
+
+        let mut generated_str = String::new();
+        generated
+            .iter()
+            .for_each(|element| generated_str.push_str(element));
+
+        generated_str
+
+        // if let Some(e2e) = &self.e2e {
+        //     if let Some(element) = e2e.keys().nth(random_range(0..e2e.keys().len())) {
+        //         let mut generated = vec![*element];
+        //         loop {
+        //             let hoge = e2e[generated.last().expect("wtf")]
+        //                 [random_range(0..e2e[generated.last().expect("wtf")].len())];
+
+        //             if hoge == "\n" {
+        //                 break;
+        //             }
+
+        //             generated.push(hoge);
+        //         }
+
+        //         let mut generated_str = String::new();
+        //         generated
+        //             .iter()
+        //             .for_each(|element| generated_str.push_str(element));
+
+        //         generated_str
+        //     } else {
+        //         panic!("wtf");
+        //     }
+        // } else {
+        //     panic!("e2e has not setup yet!");
+        // }
     }
 }
 
@@ -76,7 +97,8 @@ fn main() {
     println!("Setup markov generator,,,.");
     let mut generator = MarkovGenerator {
         raw_text: Some(
-            "重役募集ラストスパート
+            "
+重役募集ラストスパート
 寒風の吹きすさぶ折、皆様いかがお過ごしでしょうか。
 さて、次期重役の椅子も現在あと少しとなっております。とはいえ、あと少しといっても全て埋める必要があります。
 皆様のご連絡、切にお待ちしております。
