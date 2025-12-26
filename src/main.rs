@@ -7,45 +7,41 @@ use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 
 struct MarkovGenerator<'a> {
-    raw_text: Option<&'a str>,
-    splited: Option<Vec<&'a str>>,
-    e2e: Option<HashMap<&'a str, Vec<&'a str>>>,
+    raw_text: &'a str,
+    splited: Vec<&'a str>,
+    e2e: HashMap<&'a str, Vec<&'a str>>,
 }
 
 impl<'a> MarkovGenerator<'a> {
-    fn setup_splited(&mut self) -> () {
-        if let Some(raw_text) = self.raw_text {
-            self.splited =
-                Some(UnicodeSegmentation::graphemes(raw_text, true).collect::<Vec<&str>>());
-        } else {
-            panic!("No value in raw_text!")
+    pub fn new(raw_text: &'a str) -> MarkovGenerator<'a> {
+        let splited = Self::split(raw_text);
+        let e2e = Self::setup_e2e(&splited);
+        MarkovGenerator {
+            raw_text,
+            splited,
+            e2e,
         }
     }
 
-    fn setup_e2e(&mut self) -> () {
-        self.e2e = Some(HashMap::new());
-        if let Some(e2e) = &mut self.e2e {
-            if let Some(splited) = &self.splited {
-                for i in 0..splited.len() - 1 {
-                    let v = e2e.entry(splited[i]).or_insert(Vec::new());
-                    v.push(splited[i + 1]);
-                }
-            }
+    fn split(raw_text: &'a str) -> Vec<&'a str> {
+        UnicodeSegmentation::graphemes(raw_text, true).collect::<Vec<&str>>()
+    }
+
+    fn setup_e2e(splited: &Vec<&'a str>) -> HashMap<&'a str, Vec<&'a str>> {
+        let mut e2e = HashMap::new();
+        for i in 0..splited.len() - 1 {
+            let v = e2e.entry(splited[i]).or_insert(Vec::new());
+            v.push(splited[i + 1]);
         }
+        e2e
     }
 
-    fn setup(&mut self) -> () {
-        self.setup_splited();
-        self.setup_e2e();
-    }
-
-    fn generate(&self) -> String {
-        let e2e = self.e2e.as_ref().expect("e2e has not setup yet!");
-        let mut generated = vec![e2e["\n"][random_range(0..e2e["\n"].len())]];
+    pub fn generate(&self) -> String {
+        let mut generated = vec![self.e2e["\n"][random_range(0..self.e2e["\n"].len())]];
 
         loop {
-            let predicted = e2e[generated.last().expect("wtf")]
-                [random_range(0..e2e[generated.last().expect("wtf")].len())];
+            let predicted = self.e2e[generated.last().expect("wtf")]
+                [random_range(0..self.e2e[generated.last().expect("wtf")].len())];
 
             if predicted == "\n" {
                 break;
@@ -76,12 +72,7 @@ fn main() {
     println!("Content has loaded successfully!");
 
     println!("Setup markov generator,,,.");
-    let mut generator = MarkovGenerator {
-        raw_text: Some(&content),
-        splited: None,
-        e2e: None,
-    };
-    generator.setup();
+    let generator = MarkovGenerator::new(&content);
     println!("Finished setup!");
     println!("raw_text: {:?}", generator.raw_text);
     println!("splited: {:?}", generator.splited);
