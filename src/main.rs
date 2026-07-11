@@ -1,26 +1,26 @@
-use axum::routing::post;
-use axum::{Json, Router};
 use dotenvy::dotenv;
 use kuso_kuso_bot::markov::Markov;
 use poise::serenity_prelude::{self as serenity, ChannelType, GetMessages, Http};
 use poise::serenity_prelude::{GuildId, Message, UserId};
-use serde_json::{Value, json};
 use std::env;
 use std::fs::File;
 use std::io::{BufWriter, prelude::*};
 use std::thread::sleep;
 use std::time::Duration;
-use tokio::net::TcpListener;
 
-struct Data {} // User data, which is stored and accessible in all command invocations
+// User data, which is stored and accessible in all command invocations
+struct Data {
+    generator: Markov<'static>,
+}
+
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 #[tokio::main()]
 async fn main() -> () {
     load2text_file().await;
-    serve_cli();
-    // serve_bot().await;
+    // serve_cli();
+    serve_bot().await;
 }
 
 fn serve_cli() -> () {
@@ -118,58 +118,57 @@ async fn fetch_user_messages_in_guild(
 }
 
 async fn serve_bot() -> () {
-    // load .env
-    dotenv().expect(".env file not found");
-    let discord_client_id = env::vars()
-        .find(|(key, _)| key == "DISCORD_CLIENT_ID")
-        .expect("discord client id not found!")
-        .1;
-    let discord_client_secret = env::vars()
-        .find(|(key, _)| key == "DISCORD_CLIENT_SECRET")
-        .expect("discord client secret not found!")
-        .1;
+    dotenv().expect(".env file not found"); // load .env
+    let token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");
+    let intents = serenity::GatewayIntents::non_privileged();
 
-    setup_slash_commands(&discord_client_id, &discord_client_secret).await;
+    // setup markov
+    let filepath = "./data.txt";
+    println!("Open {},,,.", filepath);
+    let mut f = File::open(filepath).expect("File not found!");
+    println!("File has opened successfully!");
 
-    let app = Router::new().route("/discord/interactions", post(handle_interaction));
+    println!("Load content,,,.");
+    let mut content = String::new();
+    f.read_to_string(&mut content)
+        .expect("Something went wrong reading file!");
+    println!("Content has loaded successfully!");
 
-    let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app.into_make_service())
-        .await
-        .unwrap();
+    println!("Setup markov generator,,,.");
+    let static_content: &'static str = Box::leak(content.into_boxed_str());
+    let generator = Markov::new(static_content);
+    println!("Finished setup!");
+    println!("raw_text: {:?}", static_content);
+    println!("v2v2cnt: {:?}", generator.v2v2cnt);
+
+    let framework = poise::Framework::builder()
+        .options(poise::FrameworkOptions {
+            commands: vec![kusokuso()],
+            ..Default::default()
+        })
+        .setup(|ctx, _ready, framework| {
+            Box::pin(async move {
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                Ok(Data { generator })
+            })
+        })
+        .build();
+
+    let client = serenity::ClientBuilder::new(token, intents)
+        .framework(framework)
+        .await;
+    client.unwrap().start().await.unwrap();
 }
 
-async fn handle_interaction(Json(payload): Json<Value>) -> Json<Value> {
-    let interaction_type = payload["type"].as_i64().unwrap();
-
-    match interaction_type {
-        1 => Json(json!({"type": 1})), // ping
-        2 => {
-            // APPLICATION_COMMAND
-            Json(json!({
-                "type": 4,
-                "data": {
-                    "content": "Hello from Rust HTTP bot!"
-                }
-            }))
-        }
-        _ => Json(json!({})),
+/// クソクソbotが口をきいてくれます。
+#[poise::command(slash_command, prefix_command)]
+async fn kusokuso(
+    ctx: Context<'_>,
+    #[description = "回数"] time: Option<u32>,
+) -> Result<(), Error> {
+    for _ in 0..time.unwrap_or(1) {
+        let generated = ctx.data().generator.generate();
+        ctx.say(generated).await?;
     }
-}
-
-async fn setup_slash_commands(discord_client_id: &str, bot_token: &str) -> () {
-    let res = reqwest::Client::new()
-        .post(format!(
-            "https://discord.com/api/v10/applications/{}/commands",
-            discord_client_id
-        ))
-        .bearer_auth(bot_token)
-        .json(&json!({
-            "name":"hello",
-            "description":"say hello",
-        }))
-        .send()
-        .await
-        .unwrap();
-    println!("{:?}", res);
+    Ok(())
 }
