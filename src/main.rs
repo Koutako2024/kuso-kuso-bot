@@ -25,7 +25,7 @@ fn serve_cli() -> () {
     println!("Finished setup!");
     println!("raw_text: {:?}", generator.raw_text);
     println!("splited: {:?}", generator.splited);
-    println!("e2e: {:?}", generator.e2e);
+    println!("v2v: {:?}", generator.v2v);
 
     println!("Start generating.");
     let duration = Duration::from_millis(500);

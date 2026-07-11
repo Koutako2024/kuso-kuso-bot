@@ -3,12 +3,12 @@ from typing import Final
 from time import sleep
 
 DATA: Final[str] = "POCKYCHOCOLATE"
-e2e: dict[str, list[str]] = {}
+v2v: dict[str, list[str]] = {}
 for i in range(0, len(DATA) - 1):
-    if DATA[i] in e2e:
-        e2e[DATA[i]].append(DATA[i + 1])
+    if DATA[i] in v2v:
+        v2v[DATA[i]].append(DATA[i + 1])
     else:
-        e2e[DATA[i]] = [DATA[i + 1]]
+        v2v[DATA[i]] = [DATA[i + 1]]
 
 
 def generate() -> str:
@@ -16,9 +16,9 @@ def generate() -> str:
     print(current, end="")
     while True:
         if randint(0, len(DATA)):
-            if not current[-1] in e2e:
+            if not current[-1] in v2v:
                 break
-            candidates: list[str] = e2e[current[-1]]
+            candidates: list[str] = v2v[current[-1]]
             if not candidates:
                 break
             next: str = choice(candidates)
