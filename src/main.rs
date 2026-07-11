@@ -2,16 +2,23 @@ use axum::routing::post;
 use axum::{Json, Router};
 use dotenvy::dotenv;
 use kuso_kuso_bot::markov::Markov;
+use poise::serenity_prelude::{self as serenity, ChannelType, GetMessages, Http};
+use poise::serenity_prelude::{GuildId, Message, UserId};
 use serde_json::{Value, json};
 use std::env;
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::{BufWriter, prelude::*};
 use std::thread::sleep;
 use std::time::Duration;
 use tokio::net::TcpListener;
 
+struct Data {} // User data, which is stored and accessible in all command invocations
+type Error = Box<dyn std::error::Error + Send + Sync>;
+type Context<'a> = poise::Context<'a, Data, Error>;
+
 #[tokio::main()]
 async fn main() -> () {
+    load2text_file().await;
     serve_cli();
     // serve_bot().await;
 }
@@ -40,6 +47,74 @@ fn serve_cli() -> () {
         println!("{}", generator.generate());
         sleep(duration);
     }
+}
+
+async fn load2text_file() -> () {
+    dotenv().unwrap();
+    let temp = env::var("DISCORD_TOKEN").unwrap();
+    let http = poise::serenity_prelude::Http::new(&temp);
+    let messages = fetch_user_messages_in_guild(
+        &http,
+        GuildId::new(dotenvy::var("DISCORD_GUILD_ID").unwrap().parse().unwrap()),
+        UserId::new(
+            dotenvy::var("DISCORD_KUSO_BOT_ID")
+                .unwrap()
+                .parse()
+                .unwrap(),
+        ),
+    );
+
+    let mut writer = BufWriter::new(File::create("./data.txt").unwrap());
+
+    let msgs = messages.await.unwrap();
+
+    for msg in msgs {
+        writer.write_all(&msg.content.into_bytes()).unwrap();
+        writer.write_all(&"\n".as_bytes()).unwrap();
+    }
+}
+
+async fn fetch_user_messages_in_guild(
+    http: &Http,
+    guild_id: GuildId,
+    target_user: UserId,
+) -> serenity::Result<Vec<Message>> {
+    let channels = guild_id.channels(http).await?;
+
+    let mut result = Vec::new();
+
+    for (_, channel) in channels {
+        if channel.kind != ChannelType::Text {
+            continue;
+        }
+
+        let mut before = None;
+
+        loop {
+            let mut builder = GetMessages::new().limit(100);
+
+            if let Some(id) = before {
+                builder = builder.before(id);
+            }
+
+            let messages = channel.id.messages(http, builder).await?;
+
+            if messages.is_empty() {
+                break;
+            }
+
+            result.extend(
+                messages
+                    .iter()
+                    .filter(|m| m.author.id == target_user)
+                    .cloned(),
+            );
+
+            before = messages.last().map(|m| m.id);
+        }
+    }
+
+    Ok(result)
 }
 
 async fn serve_bot() -> () {
