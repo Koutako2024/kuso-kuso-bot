@@ -32,7 +32,7 @@ fn serve_cli() -> () {
     let generator = Markov::new(&content);
     println!("Finished setup!");
     println!("raw_text: {:?}", &content);
-    println!("v2v: {:?}", generator.v2v2cnt);
+    println!("v2v2cnt: {:?}", generator.v2v2cnt);
 
     println!("Start generating.");
     let duration = Duration::from_millis(500);

@@ -10,22 +10,23 @@ pub mod markov {
     impl<'a> Markov<'a> {
         pub fn new(raw_text: &'a str) -> Markov<'a> {
             let splited = Self::split(raw_text);
-            let v2v2cnt = Self::setup_v2v2cnt(&splited);
-            Markov { v2v2cnt }
+            let mut generator = Markov {
+                v2v2cnt: HashMap::new(),
+            };
+            generator.update_v2v2cnt(&splited);
+            generator
         }
 
         fn split(raw_text: &'a str) -> Vec<&'a str> {
             UnicodeSegmentation::graphemes(raw_text, true).collect::<Vec<&str>>()
         }
 
-        fn setup_v2v2cnt(splited: &Vec<&'a str>) -> HashMap<&'a str, HashMap<&'a str, u32>> {
-            let mut v2v2cnt = HashMap::new();
+        fn update_v2v2cnt(&mut self, splited: &Vec<&'a str>) -> () {
             for i in 0..splited.len() - 1 {
-                let v2cnt = v2v2cnt.entry(splited[i]).or_insert(HashMap::new());
+                let v2cnt = self.v2v2cnt.entry(splited[i]).or_insert(HashMap::new());
                 let cnt = v2cnt.entry(splited[i + 1]).or_insert(0);
                 *cnt += 1;
             }
-            v2v2cnt
         }
 
         pub fn generate(&self) -> String {
@@ -49,7 +50,7 @@ pub mod markov {
             generated_str
         }
 
-        pub fn choice(&self, before: &str) -> &'a str {
+        fn choice(&self, before: &str) -> &'a str {
             let mut rng = rand::rng();
 
             let v2cnt = &self.v2v2cnt[before];
@@ -70,6 +71,11 @@ pub mod markov {
             }
 
             next
+        }
+
+        pub fn add(&mut self, raw_text: &'a str) -> () {
+            let v = Self::split(raw_text);
+            self.update_v2v2cnt(&v);
         }
     }
 }
