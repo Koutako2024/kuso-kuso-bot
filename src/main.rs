@@ -1,7 +1,8 @@
 use dotenvy::dotenv;
 use kuso_kuso_bot::markov::Markov;
-use poise::serenity_prelude::{self as serenity, ChannelType, GetMessages, Http};
-use poise::serenity_prelude::{GuildId, Message, UserId};
+use poise::serenity_prelude::{
+    self as serenity, ChannelType, GetMessages, GuildId, Http, Message, UserId,
+};
 use std::env;
 use std::fs::File;
 use std::io::{BufWriter, prelude::*};
@@ -10,7 +11,7 @@ use std::time::Duration;
 
 // User data, which is stored and accessible in all command invocations
 struct Data {
-    generator: Markov<'static>,
+    generator: std::sync::Mutex<Markov<'static>>,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -120,7 +121,8 @@ async fn fetch_user_messages_in_guild(
 async fn serve_bot() -> () {
     dotenv().expect(".env file not found"); // load .env
     let token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");
-    let intents = serenity::GatewayIntents::non_privileged();
+    let intents =
+        serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
     // setup markov
     let filepath = "./data.txt";
@@ -144,12 +146,17 @@ async fn serve_bot() -> () {
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![kusokuso()],
+            event_handler: |ctx, event, framework, data| {
+                Box::pin(event_handler(ctx, event, framework, data))
+            },
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data { generator })
+                Ok(Data {
+                    generator: std::sync::Mutex::new(generator),
+                })
             })
         })
         .build();
@@ -160,6 +167,31 @@ async fn serve_bot() -> () {
     client.unwrap().start().await.unwrap();
 }
 
+async fn event_handler(
+    ctx: &serenity::Context,
+    event: &serenity::FullEvent,
+    _framework: poise::FrameworkContext<'_, Data, Error>,
+    _data: &Data,
+) -> Result<(), Error> {
+    match event {
+        serenity::FullEvent::Message { new_message } => {
+            let mut to_add = "\n".to_string();
+            to_add.push_str(&new_message.content);
+            to_add.push_str("\n");
+            _framework
+                .user_data
+                .generator
+                .lock()
+                .unwrap()
+                .add(Box::leak(to_add.into_boxed_str()));
+        }
+
+        _ => {}
+    }
+
+    Ok(())
+}
+
 /// クソクソbotが口をきいてくれます。
 #[poise::command(slash_command, prefix_command)]
 async fn kusokuso(
@@ -167,7 +199,7 @@ async fn kusokuso(
     #[description = "回数"] time: Option<u32>,
 ) -> Result<(), Error> {
     for _ in 0..time.unwrap_or(1) {
-        let generated = ctx.data().generator.generate();
+        let generated = ctx.data().generator.lock().unwrap().generate();
         ctx.say(generated).await?;
     }
     Ok(())
