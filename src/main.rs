@@ -31,9 +31,8 @@ fn serve_cli() -> () {
     println!("Setup markov generator,,,.");
     let generator = Markov::new(&content);
     println!("Finished setup!");
-    println!("raw_text: {:?}", generator.raw_text);
-    println!("splited: {:?}", generator.splited);
-    println!("v2v: {:?}", generator.v2v);
+    println!("raw_text: {:?}", &content);
+    println!("v2v: {:?}", generator.v2v2cnt);
 
     println!("Start generating.");
     let duration = Duration::from_millis(500);

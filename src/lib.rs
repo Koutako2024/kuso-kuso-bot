@@ -1,52 +1,44 @@
 pub mod markov {
-    use rand::random_range;
+    use rand::{Rng, distr::weighted::WeightedIndex};
     use std::collections::HashMap;
     use unicode_segmentation::UnicodeSegmentation;
 
     pub struct Markov<'a> {
-        pub raw_text: &'a str,
-        pub splited: Vec<&'a str>,
-        pub v2v: HashMap<&'a str, Vec<&'a str>>,
+        pub v2v2cnt: HashMap<&'a str, HashMap<&'a str, u32>>,
     }
 
     impl<'a> Markov<'a> {
         pub fn new(raw_text: &'a str) -> Markov<'a> {
             let splited = Self::split(raw_text);
-            let v2v = Self::setup_v2v(&splited);
-            Markov {
-                raw_text,
-                splited,
-                v2v,
-            }
+            let v2v2cnt = Self::setup_v2v2cnt(&splited);
+            Markov { v2v2cnt }
         }
 
         fn split(raw_text: &'a str) -> Vec<&'a str> {
             UnicodeSegmentation::graphemes(raw_text, true).collect::<Vec<&str>>()
         }
 
-        fn setup_v2v(splited: &Vec<&'a str>) -> HashMap<&'a str, Vec<&'a str>> {
-            let mut v2v = HashMap::new();
+        fn setup_v2v2cnt(splited: &Vec<&'a str>) -> HashMap<&'a str, HashMap<&'a str, u32>> {
+            let mut v2v2cnt = HashMap::new();
             for i in 0..splited.len() - 1 {
-                let v = v2v.entry(splited[i]).or_insert(Vec::new());
-                v.push(splited[i + 1]);
+                let v2cnt = v2v2cnt.entry(splited[i]).or_insert(HashMap::new());
+                let cnt = v2cnt.entry(splited[i + 1]).or_insert(0);
+                *cnt += 1;
             }
-            v2v
+            v2v2cnt
         }
 
         pub fn generate(&self) -> String {
-            let r = self.v2v["\n"].len();
-            let hoge = random_range(0..r);
-            let mut generated = vec![self.v2v["\n"][hoge]];
+            let mut generated: Vec<&str> = vec![self.choice("\n")];
 
             loop {
-                let predicted = self.v2v[generated.last().expect("wtf")]
-                    [random_range(0..self.v2v[generated.last().expect("wtf")].len())];
+                let next = self.choice(generated.last().unwrap());
 
-                if predicted == "\n" {
+                if next == "\n" {
                     break;
                 }
 
-                generated.push(predicted);
+                generated.push(next);
             }
 
             let mut generated_str = String::new();
@@ -55,6 +47,29 @@ pub mod markov {
                 .for_each(|element| generated_str.push_str(element));
 
             generated_str
+        }
+
+        pub fn choice(&self, before: &str) -> &'a str {
+            let mut rng = rand::rng();
+
+            let v2cnt = &self.v2v2cnt[before];
+
+            let mut cnts = Vec::new();
+            v2cnt.values().for_each(|cnt| cnts.push(cnt));
+
+            let weighted_index = WeightedIndex::new(cnts).unwrap();
+
+            let i = rng.sample(weighted_index);
+
+            let mut next = "\n";
+            for (j, (v, _)) in v2cnt.iter().enumerate() {
+                if j == i {
+                    next = v;
+                    break;
+                }
+            }
+
+            next
         }
     }
 }
