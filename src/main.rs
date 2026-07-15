@@ -11,6 +11,7 @@ use std::io::{BufReader, BufWriter};
 // User data, which is stored and accessible in all command invocations
 struct Data {
     generator: std::sync::Mutex<Markov>,
+    discord_kuso_bot_id: UserId,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -57,8 +58,13 @@ fn _serve_cli() -> () {
 */
 
 async fn serve_bot() -> () {
-    dotenv().expect(".env file not found"); // load .env
-    let token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");
+    // load env vars.
+    dotenv().ok(); // load .env
+    let discord_token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");
+    let discord_guild_id = GuildId::new(env::var("DISCORD_GUILD_ID").unwrap().parse().unwrap());
+    let discord_kuso_bot_id =
+        UserId::new(env::var("DISCORD_KUSO_BOT_ID").unwrap().parse().unwrap());
+
     let intents =
         serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
@@ -69,13 +75,20 @@ async fn serve_bot() -> () {
     if let Some(last_msg_id) = loaded.last_msg_id {
         println!("load msgs after {},,,", last_msg_id);
         loaded.last_msg_id = Some(
-            load_msgs_after(&mut loaded.generator, last_msg_id)
-                .await
-                .unwrap(),
+            load_msgs_after(
+                &mut loaded.generator,
+                &last_msg_id,
+                &discord_token,
+                &discord_guild_id,
+                &discord_kuso_bot_id,
+            )
+            .await
+            .unwrap(),
         );
     } else {
         println!("load all messages,,,");
-        let (loaded_generator, loaded_last_msg_id) = load_all_msgs().await;
+        let (loaded_generator, loaded_last_msg_id) =
+            load_all_msgs(&discord_token, &discord_guild_id, &discord_kuso_bot_id).await;
         loaded.generator = loaded_generator;
         loaded.last_msg_id = Some(loaded_last_msg_id);
     }
@@ -95,17 +108,18 @@ async fn serve_bot() -> () {
             },
             ..Default::default()
         })
-        .setup(|ctx, _ready, framework| {
+        .setup(move |ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Ok(Data {
                     generator: std::sync::Mutex::new(loaded.generator),
+                    discord_kuso_bot_id: discord_kuso_bot_id,
                 })
             })
         })
         .build();
 
-    let client = serenity::ClientBuilder::new(token, intents)
+    let client = serenity::ClientBuilder::new(discord_token, intents)
         .framework(framework)
         .await;
     client.unwrap().start().await.unwrap();
@@ -133,14 +147,12 @@ fn save_json(to_save_with_json: ToSaveWithJson) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-async fn load_all_msgs() -> (Markov, MessageId) {
-    // load env values
-    dotenv().unwrap(); // load .env
-    let discord_token = env::var("DISCORD_TOKEN").unwrap();
+async fn load_all_msgs(
+    discord_token: &String,
+    discord_guild_id: &GuildId,
+    discord_kuso_bot_id: &UserId,
+) -> (Markov, MessageId) {
     let http = Http::new(&discord_token);
-    let discord_guild_id = GuildId::new(env::var("DISCORD_GUILD_ID").unwrap().parse().unwrap());
-    let discord_kuso_bot_id =
-        UserId::new(env::var("DISCORD_KUSO_BOT_ID").unwrap().parse().unwrap());
 
     // fetch msgs
     let msgs = fetch_all_user_messages_in_guild(&http, discord_guild_id, discord_kuso_bot_id)
@@ -158,8 +170,8 @@ async fn load_all_msgs() -> (Markov, MessageId) {
 
 async fn fetch_all_user_messages_in_guild(
     http: &Http,
-    guild_id: GuildId,
-    target_user: UserId,
+    guild_id: &GuildId,
+    target_user: &UserId,
 ) -> serenity::Result<Vec<Message>> {
     let channels = guild_id.channels(http).await?;
 
@@ -188,7 +200,7 @@ async fn fetch_all_user_messages_in_guild(
             result.extend(
                 messages
                     .iter()
-                    .filter(|m| m.author.id == target_user)
+                    .filter(|m| m.author.id == *target_user)
                     .cloned(),
             );
 
@@ -199,14 +211,14 @@ async fn fetch_all_user_messages_in_guild(
     Ok(result)
 }
 
-async fn load_msgs_after(generator: &mut Markov, after: MessageId) -> serenity::Result<MessageId> {
-    // load env values
-    dotenv().unwrap(); // load .env
-    let discord_token = env::var("DISCORD_TOKEN").unwrap();
-    let http = Http::new(&discord_token);
-    let discord_guild_id = GuildId::new(env::var("DISCORD_GUILD_ID").unwrap().parse().unwrap());
-    let discord_kuso_bot_id =
-        UserId::new(env::var("DISCORD_KUSO_BOT_ID").unwrap().parse().unwrap());
+async fn load_msgs_after(
+    generator: &mut Markov,
+    after: &MessageId,
+    discord_token: &String,
+    discord_guild_id: &GuildId,
+    discord_kuso_bot_id: &UserId,
+) -> serenity::Result<MessageId> {
+    let http = Http::new(discord_token);
 
     let (msgs, last_msg_id) =
         fetch_user_messages_after(&http, discord_guild_id, discord_kuso_bot_id, after).await?;
@@ -219,21 +231,21 @@ async fn load_msgs_after(generator: &mut Markov, after: MessageId) -> serenity::
 
 async fn fetch_user_messages_after(
     http: &Http,
-    guild_id: GuildId,
-    target_user: UserId,
-    after: MessageId,
+    guild_id: &GuildId,
+    target_user: &UserId,
+    after: &MessageId,
 ) -> serenity::Result<(Vec<Message>, MessageId)> {
     let channels = guild_id.channels(&http).await?;
 
     let mut newer_msgs = Vec::new();
-    let mut last_msg_id: MessageId = after;
+    let mut last_msg_id: MessageId = after.clone();
 
     for (_, channel) in channels {
         if channel.kind != ChannelType::Text {
             continue;
         }
 
-        let mut current_after = after;
+        let mut current_after = after.clone();
 
         loop {
             let messages = channel
@@ -253,7 +265,7 @@ async fn fetch_user_messages_after(
             newer_msgs.extend(
                 messages
                     .iter()
-                    .filter(|m| m.author.id == target_user)
+                    .filter(|m| m.author.id == *target_user)
                     .cloned(),
             );
 
@@ -274,18 +286,27 @@ async fn event_handler(
 ) -> Result<(), Error> {
     match event {
         serenity::FullEvent::Message { new_message } => {
-            data.generator
-                .lock()
-                .unwrap()
-                .add(&format!("\n{}\n", new_message.content));
+            if &new_message.author.id == &data.discord_kuso_bot_id {
+                match data.generator.lock() {
+                    Err(e) => {
+                        println!("Error occurred while locking generator in event handler. e: {e}")
+                    }
+                    Ok(mut unlocked) => {
+                        unlocked.add(&format!("\n{}\n", new_message.content));
 
-            println!("saving new message,,,");
-            let to_save_with_json = ToSaveWithJson {
-                generator: data.generator.lock().unwrap().clone(),
-                last_msg_id: Some(new_message.id),
-            };
-            save_json(to_save_with_json).unwrap();
-            println!("saved successfully.");
+                        println!("saving new message,,,");
+                        let to_save_with_json = ToSaveWithJson {
+                            generator: unlocked.clone(),
+                            last_msg_id: Some(new_message.id),
+                        };
+                        if let Err(e) = save_json(to_save_with_json) {
+                            println!("Error occurred while saving. e: {e}");
+                        } else {
+                            println!("saved successfully.");
+                        }
+                    }
+                }
+            }
         }
 
         _ => {}
@@ -300,9 +321,19 @@ async fn kusokuso(
     ctx: Context<'_>,
     #[description = "回数"] time: Option<u32>,
 ) -> Result<(), Error> {
-    for _ in 0..time.unwrap_or(1) {
-        let generated = ctx.data().generator.lock().unwrap().generate();
-        ctx.say(generated).await?;
+    let messages = match ctx.data().generator.lock() {
+        Err(e) => {
+            println!("Error occurred in kusokuso. e: {e}");
+            Vec::new()
+        }
+        Ok(unlocked) => (0..time.unwrap_or(1))
+            .map(|_| unlocked.generate())
+            .collect::<Vec<_>>(),
+    };
+
+    for message in messages {
+        ctx.say(message).await?;
     }
+
     Ok(())
 }

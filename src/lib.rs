@@ -63,22 +63,18 @@ pub mod markov {
 
             let v2cnt = &self.v2v2cnt[before];
 
-            let mut cnts = Vec::new();
-            v2cnt.values().for_each(|cnt| cnts.push(cnt));
+            let choices: Vec<(&String, &u32)> = v2cnt.iter().collect();
 
-            let weighted_index = WeightedIndex::new(cnts).unwrap();
+            let weights: Vec<u32> = choices.iter().map(|(_, w)| **w).collect();
+
+            let weighted_index = WeightedIndex::new(&weights).unwrap();
 
             let i = rng.sample(weighted_index);
 
-            let mut next = "\n";
-            for (j, (v, _)) in v2cnt.iter().enumerate() {
-                if j == i {
-                    next = v;
-                    break;
-                }
+            match choices.get(i) {
+                Some((next, _)) => next,
+                None => "\n",
             }
-
-            next
         }
 
         pub fn add(&mut self, raw_text: &str) -> () {
