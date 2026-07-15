@@ -24,13 +24,13 @@ struct ToSaveWithJson {
 }
 
 #[tokio::main()]
-async fn main() -> () {
+async fn main() {
     // _serve_cli();
     serve_bot().await;
 }
 
 /*
-fn _serve_cli() -> () {
+fn _serve_cli()  {
     let filepath = "./data.txt";
     println!("Open {},,,.", filepath);
     let mut f = File::open(filepath).expect("File not found!");
@@ -57,7 +57,7 @@ fn _serve_cli() -> () {
 }
 */
 
-async fn serve_bot() -> () {
+async fn serve_bot() {
     // load env vars.
     dotenv().ok(); // load .env
     let discord_token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");

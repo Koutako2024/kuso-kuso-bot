@@ -23,7 +23,7 @@ pub mod markov {
             UnicodeSegmentation::graphemes(raw_text, true).collect::<Vec<&str>>()
         }
 
-        fn update_v2v2cnt(&mut self, splited: &Vec<&str>) -> () {
+        fn update_v2v2cnt(&mut self, splited: &Vec<&str>) {
             if splited.len() < 2 {
                 return;
             }
@@ -72,12 +72,12 @@ pub mod markov {
             let i = rng.sample(weighted_index);
 
             match choices.get(i) {
-                Some((next, _)) => next,
+                Some((next, _)) => next.as_str(),
                 None => "\n",
             }
         }
 
-        pub fn add(&mut self, raw_text: &str) -> () {
+        pub fn add(&mut self, raw_text: &str) {
             let v = Self::split(raw_text);
             self.update_v2v2cnt(&v);
         }
