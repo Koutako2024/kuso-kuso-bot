@@ -1,30 +1,35 @@
 use dotenvy::dotenv;
 use kuso_kuso_bot::markov::Markov;
 use poise::serenity_prelude::{
-    self as serenity, ChannelType, GetMessages, GuildId, Http, Message, UserId,
+    self as serenity, ChannelType, GetMessages, GuildId, Http, Message, MessageId, UserId,
 };
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::File;
-use std::io::{BufWriter, prelude::*};
-use std::thread::sleep;
-use std::time::Duration;
+use std::io::{BufReader, BufWriter};
 
 // User data, which is stored and accessible in all command invocations
 struct Data {
-    generator: std::sync::Mutex<Markov<'static>>,
+    generator: std::sync::Mutex<Markov>,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+struct ToSaveWithJson {
+    generator: Markov,
+    last_msg_id: Option<MessageId>,
+}
+
 #[tokio::main()]
 async fn main() -> () {
-    load2text_file().await;
-    // serve_cli();
+    // _serve_cli();
     serve_bot().await;
 }
 
-fn serve_cli() -> () {
+/*
+fn _serve_cli() -> () {
     let filepath = "./data.txt";
     println!("Open {},,,.", filepath);
     let mut f = File::open(filepath).expect("File not found!");
@@ -49,33 +54,109 @@ fn serve_cli() -> () {
         sleep(duration);
     }
 }
+*/
 
-async fn load2text_file() -> () {
-    dotenv().unwrap();
-    let temp = env::var("DISCORD_TOKEN").unwrap();
-    let http = poise::serenity_prelude::Http::new(&temp);
-    let messages = fetch_user_messages_in_guild(
-        &http,
-        GuildId::new(dotenvy::var("DISCORD_GUILD_ID").unwrap().parse().unwrap()),
-        UserId::new(
-            dotenvy::var("DISCORD_KUSO_BOT_ID")
-                .unwrap()
-                .parse()
+async fn serve_bot() -> () {
+    dotenv().expect(".env file not found"); // load .env
+    let token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");
+    let intents =
+        serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
+
+    let mut loaded = load_json();
+    println!("Finished setup!");
+    println!("loaded: {:?}", loaded);
+
+    if let Some(last_msg_id) = loaded.last_msg_id {
+        println!("load msgs after {},,,", last_msg_id);
+        loaded.last_msg_id = Some(
+            load_msgs_after(&mut loaded.generator, last_msg_id)
+                .await
                 .unwrap(),
-        ),
-    );
-
-    let mut writer = BufWriter::new(File::create("./data.txt").unwrap());
-
-    let msgs = messages.await.unwrap();
-
-    for msg in msgs {
-        writer.write_all(&msg.content.into_bytes()).unwrap();
-        writer.write_all(&"\n".as_bytes()).unwrap();
+        );
+    } else {
+        println!("load all messages,,,");
+        let (loaded_generator, loaded_last_msg_id) = load_all_msgs().await;
+        loaded.generator = loaded_generator;
+        loaded.last_msg_id = Some(loaded_last_msg_id);
     }
+    println!("loaded.");
+    println!("saving,,,");
+    if let Err(e) = save_json(loaded.clone()) {
+        println!("{e}");
+    } else {
+        println!("successfully saved.");
+    }
+
+    let framework = poise::Framework::builder()
+        .options(poise::FrameworkOptions {
+            commands: vec![kusokuso()],
+            event_handler: |ctx, event, framework, data| {
+                Box::pin(event_handler(ctx, event, framework, data))
+            },
+            ..Default::default()
+        })
+        .setup(|ctx, _ready, framework| {
+            Box::pin(async move {
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                Ok(Data {
+                    generator: std::sync::Mutex::new(loaded.generator),
+                })
+            })
+        })
+        .build();
+
+    let client = serenity::ClientBuilder::new(token, intents)
+        .framework(framework)
+        .await;
+    client.unwrap().start().await.unwrap();
 }
 
-async fn fetch_user_messages_in_guild(
+fn load_json() -> ToSaveWithJson {
+    let filepath = "./data.json";
+    println!("Open {},,,.", filepath);
+    let maybe_loaded: Result<ToSaveWithJson, Error> = (|| {
+        let f = File::open(filepath)?;
+        println!("File has opened successfully!");
+        let hoge: ToSaveWithJson = serde_json::from_reader(BufReader::new(f))?;
+        println!("Load JSON successfully!");
+        Ok(hoge)
+    })();
+
+    maybe_loaded.unwrap_or_default()
+}
+
+fn save_json(to_save_with_json: ToSaveWithJson) -> Result<(), Box<dyn std::error::Error>> {
+    let filepath = "./data.json";
+    println!("Open {},,,.", filepath);
+    let f = File::create(filepath)?;
+    serde_json::to_writer(BufWriter::new(f), &to_save_with_json)?;
+    Ok(())
+}
+
+async fn load_all_msgs() -> (Markov, MessageId) {
+    // load env values
+    dotenv().unwrap(); // load .env
+    let discord_token = env::var("DISCORD_TOKEN").unwrap();
+    let http = Http::new(&discord_token);
+    let discord_guild_id = GuildId::new(env::var("DISCORD_GUILD_ID").unwrap().parse().unwrap());
+    let discord_kuso_bot_id =
+        UserId::new(env::var("DISCORD_KUSO_BOT_ID").unwrap().parse().unwrap());
+
+    // fetch msgs
+    let msgs = fetch_all_user_messages_in_guild(&http, discord_guild_id, discord_kuso_bot_id)
+        .await
+        .unwrap();
+
+    let mut generator = Markov::new("");
+    msgs.iter()
+        .for_each(|msg| generator.add(&format!("\n{}\n", msg.content)));
+
+    let last_msg_id = msgs.iter().map(|m| m.id).max().unwrap();
+
+    (generator, last_msg_id)
+}
+
+async fn fetch_all_user_messages_in_guild(
     http: &Http,
     guild_id: GuildId,
     target_user: UserId,
@@ -118,72 +199,93 @@ async fn fetch_user_messages_in_guild(
     Ok(result)
 }
 
-async fn serve_bot() -> () {
-    dotenv().expect(".env file not found"); // load .env
-    let token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");
-    let intents =
-        serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
+async fn load_msgs_after(generator: &mut Markov, after: MessageId) -> serenity::Result<MessageId> {
+    // load env values
+    dotenv().unwrap(); // load .env
+    let discord_token = env::var("DISCORD_TOKEN").unwrap();
+    let http = Http::new(&discord_token);
+    let discord_guild_id = GuildId::new(env::var("DISCORD_GUILD_ID").unwrap().parse().unwrap());
+    let discord_kuso_bot_id =
+        UserId::new(env::var("DISCORD_KUSO_BOT_ID").unwrap().parse().unwrap());
 
-    // setup markov
-    let filepath = "./data.txt";
-    println!("Open {},,,.", filepath);
-    let mut f = File::open(filepath).expect("File not found!");
-    println!("File has opened successfully!");
+    let (msgs, last_msg_id) =
+        fetch_user_messages_after(&http, discord_guild_id, discord_kuso_bot_id, after).await?;
 
-    println!("Load content,,,.");
-    let mut content = String::new();
-    f.read_to_string(&mut content)
-        .expect("Something went wrong reading file!");
-    println!("Content has loaded successfully!");
+    msgs.iter()
+        .for_each(|m| generator.add(&format!("\n{}\n", m.content)));
 
-    println!("Setup markov generator,,,.");
-    let static_content: &'static str = Box::leak(content.into_boxed_str());
-    let generator = Markov::new(static_content);
-    println!("Finished setup!");
-    println!("raw_text: {:?}", static_content);
-    println!("v2v2cnt: {:?}", generator.v2v2cnt);
+    Ok(last_msg_id)
+}
 
-    let framework = poise::Framework::builder()
-        .options(poise::FrameworkOptions {
-            commands: vec![kusokuso()],
-            event_handler: |ctx, event, framework, data| {
-                Box::pin(event_handler(ctx, event, framework, data))
-            },
-            ..Default::default()
-        })
-        .setup(|ctx, _ready, framework| {
-            Box::pin(async move {
-                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data {
-                    generator: std::sync::Mutex::new(generator),
-                })
-            })
-        })
-        .build();
+async fn fetch_user_messages_after(
+    http: &Http,
+    guild_id: GuildId,
+    target_user: UserId,
+    after: MessageId,
+) -> serenity::Result<(Vec<Message>, MessageId)> {
+    let channels = guild_id.channels(&http).await?;
 
-    let client = serenity::ClientBuilder::new(token, intents)
-        .framework(framework)
-        .await;
-    client.unwrap().start().await.unwrap();
+    let mut newer_msgs = Vec::new();
+    let mut last_msg_id: MessageId = after;
+
+    for (_, channel) in channels {
+        if channel.kind != ChannelType::Text {
+            continue;
+        }
+
+        let mut current_after = after;
+
+        loop {
+            let messages = channel
+                .id
+                .messages(&http, GetMessages::new().after(current_after).limit(100))
+                .await?;
+
+            if messages.is_empty() {
+                break;
+            }
+
+            if let Some(max_id) = messages.iter().map(|m| m.id).max() {
+                current_after = max_id;
+                last_msg_id = last_msg_id.max(current_after);
+            }
+
+            newer_msgs.extend(
+                messages
+                    .iter()
+                    .filter(|m| m.author.id == target_user)
+                    .cloned(),
+            );
+
+            if messages.len() < 100 {
+                break;
+            }
+        }
+    }
+
+    Ok((newer_msgs, last_msg_id))
 }
 
 async fn event_handler(
-    ctx: &serenity::Context,
+    _ctx: &serenity::Context,
     event: &serenity::FullEvent,
     _framework: poise::FrameworkContext<'_, Data, Error>,
-    _data: &Data,
+    data: &Data,
 ) -> Result<(), Error> {
     match event {
         serenity::FullEvent::Message { new_message } => {
-            let mut to_add = "\n".to_string();
-            to_add.push_str(&new_message.content);
-            to_add.push_str("\n");
-            _framework
-                .user_data
-                .generator
+            data.generator
                 .lock()
                 .unwrap()
-                .add(Box::leak(to_add.into_boxed_str()));
+                .add(&format!("\n{}\n", new_message.content));
+
+            println!("saving new message,,,");
+            let to_save_with_json = ToSaveWithJson {
+                generator: data.generator.lock().unwrap().clone(),
+                last_msg_id: Some(new_message.id),
+            };
+            save_json(to_save_with_json).unwrap();
+            println!("saved successfully.");
         }
 
         _ => {}
