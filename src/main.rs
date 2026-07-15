@@ -321,17 +321,22 @@ async fn kusokuso(
     ctx: Context<'_>,
     #[description = "回数"] time: Option<u32>,
 ) -> Result<(), Error> {
-    let messages = match ctx.data().generator.lock() {
-        Err(e) => {
-            println!("Error occurred in kusokuso. e: {e}");
-            Vec::new()
+    if let Some(_time) = time {
+        if _time > 100 {
+            ctx.say("100回までにしてね。").await?;
+            return Ok(());
         }
-        Ok(unlocked) => (0..time.unwrap_or(1))
-            .map(|_| unlocked.generate())
-            .collect::<Vec<_>>(),
-    };
+    }
 
-    for message in messages {
+    for _ in 0..time.unwrap_or(1) {
+        let message = match ctx.data().generator.lock() {
+            Err(e) => {
+                println!("Error occurred in kusokuso. e: {e}");
+                break;
+            }
+            Ok(unlocked) => unlocked.generate(),
+        };
+
         ctx.say(message).await?;
     }
 
