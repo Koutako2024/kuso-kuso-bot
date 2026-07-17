@@ -182,6 +182,8 @@ async fn fetch_all_user_messages_in_guild(
             continue;
         }
 
+        println!("{}", channel.name());
+
         let mut before = None;
 
         loop {
@@ -191,7 +193,17 @@ async fn fetch_all_user_messages_in_guild(
                 builder = builder.before(id);
             }
 
-            let messages = channel.id.messages(http, builder).await?;
+            let messages = channel.id.messages(http, builder).await;
+            if let Err(e) = messages {
+                println!(
+                    "Error occurred while loading messages from #{} (id: {}).\nYou should reset ./data.json and restart later. e: \n{}",
+                    channel.name(),
+                    channel.id,
+                    e
+                );
+                break;
+            }
+            let messages = messages.unwrap();
 
             if messages.is_empty() {
                 break;
@@ -245,13 +257,25 @@ async fn fetch_user_messages_after(
             continue;
         }
 
+        println!("{}", channel.name());
+
         let mut current_after = after.clone();
 
         loop {
             let messages = channel
                 .id
                 .messages(&http, GetMessages::new().after(current_after).limit(100))
-                .await?;
+                .await;
+            if let Err(e) = messages {
+                println!(
+                    "Error occurred while loading messages from #{} (id: {}).\nYou should reset ./data.json and restart later. e: \n{}",
+                    channel.name(),
+                    channel.id,
+                    e
+                );
+                break;
+            }
+            let messages = messages.unwrap();
 
             if messages.is_empty() {
                 break;
