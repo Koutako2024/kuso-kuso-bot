@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
+use systemd_journal_logger::JournalLog;
 
 // User data, which is stored and accessible in all command invocations
 struct Data {
@@ -26,7 +27,7 @@ struct ToSaveWithJson {
 
 #[tokio::main()]
 async fn main() {
-    env_logger::init();
+    JournalLog::new().unwrap().install().unwrap();
     serve_bot().await;
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "kuso_kuso_bot"
-version = "0.1.0"
+version = "1.2.0"
 edition = "2024"
 
 [dependencies]
@@ -11,5 +11,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dotenvy = "0.15.7"
 poise = "0.6.2"
-env_logger = "0.11.11"
 log = "0.4.33"
+systemd-journal-logger = "2.2.2"
