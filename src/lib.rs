@@ -37,11 +37,11 @@ pub mod markov {
             }
         }
 
-        pub fn generate(&self) -> String {
-            let mut generated: Vec<&str> = vec![self.choice("\n")];
+        pub fn generate(&self) -> Result<String, Box<dyn std::error::Error>> {
+            let mut generated: Vec<&str> = vec![self.choice("\n")?];
 
             loop {
-                let next = self.choice(generated.last().unwrap());
+                let next = self.choice(generated.last().unwrap())?;
 
                 if next == "\n" {
                     break;
@@ -55,26 +55,29 @@ pub mod markov {
                 .iter()
                 .for_each(|element| generated_str.push_str(element));
 
-            generated_str
+            Ok(generated_str)
         }
 
-        fn choice(&self, before: &str) -> &str {
+        fn choice(&self, before: &str) -> Result<&str, Box<dyn std::error::Error>> {
             let mut rng = rand::rng();
 
-            let v2cnt = &self.v2v2cnt[before];
+            let v2cnt = self
+                .v2v2cnt
+                .get(before)
+                .ok_or("can't choice from {before}!")?;
 
             let choices: Vec<(&String, &u32)> = v2cnt.iter().collect();
 
             let weights: Vec<u32> = choices.iter().map(|(_, w)| **w).collect();
 
-            let weighted_index = WeightedIndex::new(&weights).unwrap();
+            let weighted_index = WeightedIndex::new(&weights)?;
 
             let i = rng.sample(weighted_index);
 
-            match choices.get(i) {
+            Ok(match choices.get(i) {
                 Some((next, _)) => next.as_str(),
                 None => "\n",
-            }
+            })
         }
 
         pub fn add(&mut self, raw_text: &str) {

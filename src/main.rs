@@ -1,5 +1,6 @@
 use dotenvy::dotenv;
 use kuso_kuso_bot::markov::Markov;
+use log::{error, info, warn};
 use poise::serenity_prelude::{
     self as serenity, ChannelType, GetMessages, GuildId, Http, Message, MessageId, UserId,
 };
@@ -25,55 +26,36 @@ struct ToSaveWithJson {
 
 #[tokio::main()]
 async fn main() {
-    // _serve_cli();
+    env_logger::init();
     serve_bot().await;
 }
-
-/*
-fn _serve_cli()  {
-    let filepath = "./data.txt";
-    println!("Open {},,,.", filepath);
-    let mut f = File::open(filepath).expect("File not found!");
-    println!("File has opened successfully!");
-
-    println!("Load content,,,.");
-    let mut content = String::new();
-    f.read_to_string(&mut content)
-        .expect("Something went wrong reading file!");
-    println!("Content has loaded successfully!");
-
-    println!("Setup markov generator,,,.");
-    let generator = Markov::new(&content);
-    println!("Finished setup!");
-    println!("raw_text: {:?}", &content);
-    println!("v2v2cnt: {:?}", generator.v2v2cnt);
-
-    println!("Start generating.");
-    let duration = Duration::from_millis(500);
-    loop {
-        println!("{}", generator.generate());
-        sleep(duration);
-    }
-}
-*/
 
 async fn serve_bot() {
     // load env vars.
     dotenv().ok(); // load .env
-    let discord_token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");
-    let discord_guild_id = GuildId::new(env::var("DISCORD_GUILD_ID").unwrap().parse().unwrap());
-    let discord_kuso_bot_id =
-        UserId::new(env::var("DISCORD_KUSO_BOT_ID").unwrap().parse().unwrap());
+    let discord_token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN.");
+    let discord_guild_id = GuildId::new(
+        env::var("DISCORD_GUILD_ID")
+            .expect("missing DISCORD_GUILD_ID.")
+            .parse()
+            .expect("DISCORD_GUILD_ID must be integer."),
+    );
+    let discord_kuso_bot_id = UserId::new(
+        env::var("DISCORD_KUSO_BOT_ID")
+            .expect("missing DISCORD_KUSO_BOT_ID.")
+            .parse()
+            .expect("DISCORD_KUSO_BOT_ID must be integer."),
+    );
 
     let intents =
         serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
     let mut loaded = load_json();
-    println!("Finished setup!");
-    println!("loaded: {:?}", loaded);
+    info!("Finished setup!");
+    info!("loaded: {:?}", loaded);
 
     if let Some(last_msg_id) = loaded.last_msg_id {
-        println!("load msgs after {},,,", last_msg_id);
+        info!("load msgs after {},,,", last_msg_id);
         loaded.last_msg_id = Some(
             load_msgs_after(
                 &mut loaded.generator,
@@ -86,18 +68,18 @@ async fn serve_bot() {
             .unwrap(),
         );
     } else {
-        println!("load all messages,,,");
+        info!("load all messages,,,");
         let (loaded_generator, loaded_last_msg_id) =
             load_all_msgs(&discord_token, &discord_guild_id, &discord_kuso_bot_id).await;
         loaded.generator = loaded_generator;
         loaded.last_msg_id = Some(loaded_last_msg_id);
     }
-    println!("loaded.");
-    println!("saving,,,");
+    info!("loaded.");
+    info!("saving,,,");
     if let Err(e) = save_json(loaded.clone()) {
-        println!("{e}");
+        error!("Error while saving. e: {e}");
     } else {
-        println!("successfully saved.");
+        info!("successfully saved.");
     }
 
     let framework = poise::Framework::builder()
@@ -127,21 +109,25 @@ async fn serve_bot() {
 
 fn load_json() -> ToSaveWithJson {
     let filepath = "./data.json";
-    println!("Open {},,,.", filepath);
+    info!("Open {},,,.", filepath);
     let maybe_loaded: Result<ToSaveWithJson, Error> = (|| {
         let f = File::open(filepath)?;
-        println!("File has opened successfully!");
+        info!("File has opened successfully!");
         let hoge: ToSaveWithJson = serde_json::from_reader(BufReader::new(f))?;
-        println!("Load JSON successfully!");
+        info!("Load JSON successfully!");
         Ok(hoge)
     })();
+
+    if let Err(e) = &maybe_loaded {
+        warn!("ignored error while loading json. e: {e}");
+    }
 
     maybe_loaded.unwrap_or_default()
 }
 
 fn save_json(to_save_with_json: ToSaveWithJson) -> Result<(), Box<dyn std::error::Error>> {
     let filepath = "./data.json";
-    println!("Open {},,,.", filepath);
+    info!("Open {},,,.", filepath);
     let f = File::create(filepath)?;
     serde_json::to_writer(BufWriter::new(f), &to_save_with_json)?;
     Ok(())
@@ -182,7 +168,7 @@ async fn fetch_all_user_messages_in_guild(
             continue;
         }
 
-        println!("{}", channel.name());
+        info!("{}", channel.name());
 
         let mut before = None;
 
@@ -195,8 +181,8 @@ async fn fetch_all_user_messages_in_guild(
 
             let messages = channel.id.messages(http, builder).await;
             if let Err(e) = messages {
-                println!(
-                    "Error occurred while loading messages from #{} (id: {}).\nYou should reset ./data.json and restart later. e: \n{}",
+                warn!(
+                    "ignored error occurred while loading messages from #{} (id: {}).\nYou should reset ./data.json and restart later. e: \n{}",
                     channel.name(),
                     channel.id,
                     e
@@ -257,7 +243,7 @@ async fn fetch_user_messages_after(
             continue;
         }
 
-        println!("{}", channel.name());
+        info!("{}", channel.name());
 
         let mut current_after = after.clone();
 
@@ -267,8 +253,8 @@ async fn fetch_user_messages_after(
                 .messages(&http, GetMessages::new().after(current_after).limit(100))
                 .await;
             if let Err(e) = messages {
-                println!(
-                    "Error occurred while loading messages from #{} (id: {}).\nYou should reset ./data.json and restart later. e: \n{}",
+                warn!(
+                    "ignored error occurred while loading messages from #{} (id: {}).\nYou should reset ./data.json and restart later. e: \n{}",
                     channel.name(),
                     channel.id,
                     e
@@ -313,20 +299,20 @@ async fn event_handler(
             if &new_message.author.id == &data.discord_kuso_bot_id {
                 match data.generator.lock() {
                     Err(e) => {
-                        println!("Error occurred while locking generator in event handler. e: {e}")
+                        error!("Error occurred while locking generator in event handler. e: {e}")
                     }
                     Ok(mut unlocked) => {
                         unlocked.add(&format!("\n{}\n", new_message.content));
 
-                        println!("saving new message,,,");
+                        info!("saving new message,,,");
                         let to_save_with_json = ToSaveWithJson {
                             generator: unlocked.clone(),
                             last_msg_id: Some(new_message.id),
                         };
                         if let Err(e) = save_json(to_save_with_json) {
-                            println!("Error occurred while saving. e: {e}");
+                            error!("Error occurred while saving. e: {e}");
                         } else {
-                            println!("saved successfully.");
+                            info!("saved successfully.");
                         }
                     }
                 }
@@ -355,10 +341,12 @@ async fn kusokuso(
     for _ in 0..time.unwrap_or(1) {
         let message = match ctx.data().generator.lock() {
             Err(e) => {
-                println!("Error occurred in kusokuso. e: {e}");
+                error!("Error occurred in kusokuso. e: {e}");
                 break;
             }
-            Ok(unlocked) => unlocked.generate(),
+            Ok(unlocked) => unlocked
+                .generate()
+                .unwrap_or("うおｗ生成失敗してて草ｗ".to_string()),
         };
 
         ctx.say(message).await?;
