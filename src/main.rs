@@ -1,6 +1,6 @@
 use dotenvy::dotenv;
 use kuso_kuso_bot::markov::Markov;
-use log::{error, info, warn};
+use log::{debug, error, info, trace, warn};
 use poise::serenity_prelude::{
     self as serenity, ChannelType, GetMessages, GuildId, Http, Message, MessageId, UserId,
 };
@@ -27,13 +27,33 @@ struct ToSaveWithJson {
 
 #[tokio::main()]
 async fn main() {
+    dotenv().ok(); // load .env
     JournalLog::new().unwrap().install().unwrap();
+    log::set_max_level(
+        match env::var("RUST_LOG")
+            .unwrap_or("info".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "off" => log::LevelFilter::Off,
+            "error" => log::LevelFilter::Error,
+            "warn" => log::LevelFilter::Warn,
+            "info" => log::LevelFilter::Info,
+            "debug" => log::LevelFilter::Debug,
+            "trace" => log::LevelFilter::Trace,
+            others => panic!("RUST_LOG is set unknown log level: {others}"),
+        },
+    );
+    error!("test log. error!");
+    warn!("test log. warn!");
+    info!("test log. info!");
+    debug!("test log. debug!");
+    trace!("test log. trace!");
     serve_bot().await;
 }
 
 async fn serve_bot() {
     // load env vars.
-    dotenv().ok(); // load .env
     let discord_token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN.");
     let discord_guild_id = GuildId::new(
         env::var("DISCORD_GUILD_ID")
